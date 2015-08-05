@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "src/wasm/decoder.h"
+#include "src/wasm/encoder.h"
 #include "src/wasm/wasm-macro-gen.h"
 #include "src/wasm/wasm-module.h"
 #include "src/wasm/wasm-opcodes.h"
@@ -32,26 +32,30 @@ TEST(Run_WasmModule_Return114) {
   static const byte kReturnValue = 114;
   static const byte kCodeStartOffset = 30;
   static const byte kCodeEndOffset = 33;
-  static const byte data[] = {
-      MODULE_HEADER(0, 1, 0),     // globals, functions, data segments
-      0, kAstInt32,               // signature: void -> int
-      0, 0, 0, 0,                 // name offset
-      kCodeStartOffset, 0, 0, 0,  // code start offset
-      kCodeEndOffset, 0, 0, 0,    // code end offset
-      0, 0,                       // local int32 count
-      0, 0,                       // local int64 count
-      0, 0,                       // local float32 count
-      0, 0,                       // local float64 count
-      1,                          // exported
-      0,                          // external
-      kStmtReturn,                // body
-      kExprInt8Const,             // --
-      kReturnValue                // --
-  };
 
+  Zone zone;
+  WasmEncoder e(&zone);
+  e.AddModuleHeader(0, 1, 0);            // globals, functions, data segments
+  e.AddUint8(0); e.AddUint8(kAstInt32);  // signature: void -> int
+  e.AddUint32(0);                        // name offset
+  e.AddUint32(kCodeStartOffset);         // code start offset
+  e.AddUint32(kCodeEndOffset);           // code end offset
+  e.AddUint16(0);                        // local int32 count
+  e.AddUint16(0);                        // local int64 count
+  e.AddUint16(0);                        // local float32 count
+  e.AddUint16(0);                        // local float64 count
+  e.AddUint8(1);                         // exported
+  e.AddUint8(0);                         // external
+
+  e.AddFunction(kAstInt32);
+  e.AddUint8(kStmtReturn);               // body
+  e.AddUint8(kExprInt8Const);            // --
+  e.AddUint8(kReturnValue);              // --
+  e.Assemble();
+  
   Isolate* isolate = CcTest::InitIsolateOnce();
   int32_t result =
-      CompileAndRunWasmModule(isolate, data, data + arraysize(data));
+      CompileAndRunWasmModule(isolate, e.ModuleBegin(), e.ModuleEnd());
   CHECK_EQ(kReturnValue, result);
 }
 
