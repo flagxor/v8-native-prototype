@@ -27,40 +27,26 @@ using namespace v8::internal::wasm;
       static_cast<uint8_t>(data_segments_count),                           \
       static_cast<uint8_t>(data_segments_count >> 8)
 
-
 TEST(Run_WasmModule_Return114) {
   static const byte kReturnValue = 114;
-  static const byte kCodeStartOffset = 30;
-  static const byte kCodeEndOffset = 33;
-
   Zone zone;
-  WasmEncoder e(&zone);
-  e.AddModuleHeader(0, 1, 0);            // globals, functions, data segments
-  e.AddUint8(0); e.AddUint8(kAstInt32);  // signature: void -> int
-  e.AddUint32(0);                        // name offset
-  e.AddUint32(kCodeStartOffset);         // code start offset
-  e.AddUint32(kCodeEndOffset);           // code end offset
-  e.AddUint16(0);                        // local int32 count
-  e.AddUint16(0);                        // local int64 count
-  e.AddUint16(0);                        // local float32 count
-  e.AddUint16(0);                        // local float64 count
-  e.AddUint8(1);                         // exported
-  e.AddUint8(0);                         // external
-
-  e.AddFunction(kAstInt32);
-  e.AddUint8(kStmtReturn);               // body
-  e.AddUint8(kExprInt8Const);            // --
-  e.AddUint8(kReturnValue);              // --
-  e.Assemble();
-  
+  WasmEncoderBuilder e;
+  WasmFunctionBuilder f;
+  f.ReturnType(kAstInt32);
+  f.Exported(1);
+  f.AddStatement(kStmtReturn);
+  f.AddStatement(kExprInt8Const);
+  f.AddStatement(kReturnValue);
+  e.AddFunction(f.Build());
+  WasmEncoder we = e.WriteAndBuild(&zone);
   Isolate* isolate = CcTest::InitIsolateOnce();
   int32_t result =
-      CompileAndRunWasmModule(isolate, e.ModuleBegin(), e.ModuleEnd());
+      CompileAndRunWasmModule(isolate, we.Begin(), we.End());
   CHECK_EQ(kReturnValue, result);
 }
 
 
-TEST(Run_WasmModule_CallAdd) {
+/*TEST(Run_WasmModule_CallAdd) {
   static const int kModuleHeaderSize = 6;
   static const int kFunctionSize = 24;
   static const byte kCodeStartOffset0 =
@@ -107,6 +93,38 @@ TEST(Run_WasmModule_CallAdd) {
   Isolate* isolate = CcTest::InitIsolateOnce();
   int32_t result =
       CompileAndRunWasmModule(isolate, data, data + arraysize(data));
+  CHECK_EQ(99, result);
+}*/
+
+TEST(Run_WasmModule_CallAdd) {
+  Zone zone;
+  WasmEncoderBuilder e;
+  WasmFunctionBuilder f1;
+  f1.ReturnType(kAstInt32);
+  f1.AddParam(kAstInt32);
+  f1.AddParam(kAstInt32);
+  f1.AddStatement(kStmtReturn);
+  f1.AddStatement(kExprInt32Add);
+  f1.AddStatement(kExprGetLocal);
+  f1.AddStatement(0);
+  f1.AddStatement(kExprGetLocal);
+  f1.AddStatement(1);
+  e.AddFunction(f1.Build());
+  WasmFunctionBuilder f2;
+  f2.ReturnType(kAstInt32);
+  f2.Exported(1);
+  f2.AddStatement(kStmtReturn);
+  f2.AddStatement(kExprCallFunction);
+  f2.AddStatement(0);
+  f2.AddStatement(kExprInt8Const);
+  f2.AddStatement(77);
+  f2.AddStatement(kExprInt8Const);
+  f2.AddStatement(22);
+  e.AddFunction(f2.Build());
+  WasmEncoder we = e.WriteAndBuild(&zone);
+  Isolate* isolate = CcTest::InitIsolateOnce();
+  int32_t result =
+      CompileAndRunWasmModule(isolate, we.Begin(), we.End());
   CHECK_EQ(99, result);
 }
 
