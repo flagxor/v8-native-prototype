@@ -25,31 +25,31 @@ public:
   void Serialize(byte*, uint32_t, uint32_t);
 private:
   WasmFunctionEncoder(uint8_t return_type,
-               std::vector<uint8_t> params,
+               const ZoneVector<uint8_t>& params,
                uint16_t local_int32_count,
                uint16_t local_int64_count,
                uint16_t local_float32_count,
                uint16_t local_float64_count,
                uint8_t exported,
                uint8_t external,
-               std::vector<uint8_t> stmts);
+               const ZoneVector<uint8_t>& stmts);
   friend class WasmFunctionBuilder;
   uint8_t return_type_;
-  std::vector<uint8_t> params_;
+  ZoneVector<uint8_t> params_;
   uint16_t local_int32_count_;
   uint16_t local_int64_count_;
   uint16_t local_float32_count_;
   uint16_t local_float64_count_;
   uint8_t exported_;
   uint8_t external_;
-  std::vector<uint8_t> stmts_;
+  ZoneVector<uint8_t> stmts_;
   void SerializeFunctionHeader(byte* buffer, uint32_t header_begin, uint32_t body_begin);
   void SerializeFunctionBody(byte* buffer, uint32_t header_begin, uint32_t body_begin);
 };
 
 class WasmFunctionBuilder {
 public:
-  WasmFunctionBuilder();
+  WasmFunctionBuilder(Zone*);
   void AddParam(uint8_t);
   void ReturnType(uint8_t);
   void AddStatement(uint8_t);
@@ -58,14 +58,14 @@ public:
   WasmFunctionEncoder Build(void);
 private:
   uint8_t return_type_;
-  std::vector<uint8_t> params_;
+  ZoneVector<uint8_t> params_;
   uint16_t local_int32_count_;
   uint16_t local_int64_count_;
   uint16_t local_float32_count_;
   uint16_t local_float64_count_;
   uint8_t exported_;
   uint8_t external_;
-  std::vector<uint8_t> stmts_;
+  ZoneVector<uint8_t> stmts_;
 };
 
 class WasmEncoder {
@@ -82,10 +82,11 @@ private:
 
 class WasmEncoderBuilder {
 public:
-  void AddFunction(WasmFunctionEncoder);
+  WasmEncoderBuilder(Zone*);
+  void AddFunction(const WasmFunctionEncoder&);
   WasmEncoder WriteAndBuild(Zone*);
 private:
-  std::vector<WasmFunctionEncoder> functions_;
+  ZoneVector<WasmFunctionEncoder> functions_;
 };
 
 
