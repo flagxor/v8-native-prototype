@@ -11,24 +11,26 @@
 #include "src/wasm/wasm-module.h"
 #include "src/wasm/wasm-opcodes.h"
 
+#include "src/v8memory.h"
+
 namespace v8 {
 namespace internal {
 namespace wasm {
 
 
-void AddUint8(byte*& b, uint8_t x) {
-  *b = x;
-  b++;
+void AddUint8(byte** b, uint8_t x) {
+  Memory::uint8_at(*b) = x;
+  *b+=1;
 }
 
-void AddUint16(byte*& b, uint16_t x) {
-  AddUint8(b, x);
-  AddUint8(b, x >> 8);
+void AddUint16(byte** b, uint16_t x) {
+  Memory::uint16_at(*b) = x;
+  *b+=2;
 }
 
-void AddUint32(byte*& b, uint32_t x) {
-  AddUint16(b, x);
-  AddUint16(b, x >> 16);
+void AddUint32(byte** b, uint32_t x) {
+  Memory::uint32_at(*b) = x;
+  *b+=4;
 }
 
 WasmFunctionBuilder::WasmFunctionBuilder(Zone* z)
@@ -40,7 +42,7 @@ WasmFunctionBuilder::WasmFunctionBuilder(Zone* z)
     local_float64_count_(0),
     exported_(0),
     external_(0),
-    stmts_(z) {}
+    body_(z) {}
 
 void WasmFunctionBuilder::AddParam(uint8_t param) {
   params_.push_back(param);
@@ -50,8 +52,8 @@ void WasmFunctionBuilder::ReturnType(uint8_t type) {
   return_type_ = type;
 }
 
-void WasmFunctionBuilder::AddStatement(uint8_t stmt) {
-  stmts_.push_back(stmt);
+void WasmFunctionBuilder::AddBody(const ZoneVector<uint8_t>& body) {
+  body_.insert(body_.end(), body.begin(), body.end());
 }
 
 void WasmFunctionBuilder::Exported(uint8_t flag) {
@@ -62,27 +64,27 @@ void WasmFunctionBuilder::External(uint8_t flag) {
   external_ = flag;
 }
 
-WasmFunctionEncoder WasmFunctionBuilder::Build() {
+WasmFunctionEncoder WasmFunctionBuilder::Build() const {
   return WasmFunctionEncoder::WasmFunctionEncoder(return_type_,
-                          params_,
-                          local_int32_count_,
-                          local_int64_count_,
-                          local_float32_count_,
-                          local_float64_count_,
-                          exported_,
-                          external_,
-                          stmts_);
+      params_,
+      local_int32_count_,
+      local_int64_count_,
+      local_float32_count_,
+      local_float64_count_,
+      exported_,
+      external_,
+      body_);
 }
 
 WasmFunctionEncoder::WasmFunctionEncoder(uint8_t return_type,
-                    const ZoneVector<uint8_t>& params,
-                    uint16_t local_int32_count,
-                    uint16_t local_int64_count,
-                    uint16_t local_float32_count,
-                    uint16_t local_float64_count,
-                    uint8_t exported,
-                    uint8_t external,
-                    const ZoneVector<uint8_t>& stmts)
+    const ZoneVector<uint8_t>& params,
+    uint16_t local_int32_count,
+    uint16_t local_int64_count,
+    uint16_t local_float32_count,
+    uint16_t local_float64_count,
+    uint8_t exported,
+    uint8_t external,
+    const ZoneVector<uint8_t>& body)
   : return_type_(return_type),
     params_(params),
     local_int32_count_(local_int32_count),
@@ -91,45 +93,45 @@ WasmFunctionEncoder::WasmFunctionEncoder(uint8_t return_type,
     local_float64_count_(local_float64_count),
     exported_(exported),
     external_(external),
-    stmts_(stmts){
+    body_(body){
 }
 
-uint32_t WasmFunctionEncoder::HeaderSize() {
-  static const int kMinFunctionSize = 24;
-  return kMinFunctionSize + (uint32_t)params_.size();
+uint32_t WasmFunctionEncoder::HeaderSize() const {
+  static const uint32_t kMinFunctionSize = 24;
+  return kMinFunctionSize + static_cast<uint32_t>(params_.size());
 }
 
-uint32_t WasmFunctionEncoder::BodySize(void) {
-  return (uint32_t)stmts_.size();
+uint32_t WasmFunctionEncoder::BodySize(void) const {
+  return static_cast<uint32_t>(body_.size());
 }
 
-void WasmFunctionEncoder::Serialize(byte* buffer, uint32_t header_begin, uint32_t body_begin) {
+void WasmFunctionEncoder::Serialize(byte* buffer, uint32_t header_begin, uint32_t body_begin) const {
   SerializeFunctionHeader(buffer, header_begin, body_begin);
   SerializeFunctionBody(buffer, header_begin, body_begin);
 }
 
-void WasmFunctionEncoder::SerializeFunctionHeader(byte* buffer, uint32_t header_begin, uint32_t body_begin) {
+void WasmFunctionEncoder::SerializeFunctionHeader(byte* buffer, uint32_t header_begin, uint32_t body_begin) const {
   byte* header = buffer + header_begin;
   //signature
-  AddUint8(header, (uint32_t)params_.size());
-  for (int i = 0; i < (uint32_t)params_.size(); i++) {
-    AddUint8(header, params_[i]);
+  AddUint8(&header, static_cast<uint8_t>(params_.size()));
+  for (size_t i = 0; i < static_cast<size_t>(params_.size()); i++) {
+    AddUint8(&header, params_[i]);
   }
-  AddUint8(header, return_type_);
-  AddUint32(header, 0);                          //name offset
-  AddUint32(header, body_begin);
-  AddUint32(header, body_begin + (uint32_t)stmts_.size());
-  AddUint16(header, local_int32_count_);
-  AddUint16(header, local_int64_count_);
-  AddUint16(header, local_float32_count_);
-  AddUint16(header, local_float64_count_);
-  AddUint8(header, exported_);
-  AddUint8(header, external_);
+  AddUint8(&header, return_type_);
+  AddUint32(&header, 0);                          //name offset
+  AddUint32(&header, body_begin);
+  AddUint32(&header, body_begin + BodySize());
+  AddUint16(&header, local_int32_count_);
+  AddUint16(&header, local_int64_count_);
+  AddUint16(&header, local_float32_count_);
+  AddUint16(&header, local_float64_count_);
+  AddUint8(&header, exported_);
+  AddUint8(&header, external_);
 }
 
-void WasmFunctionEncoder::SerializeFunctionBody(byte* buffer, uint32_t header_begin, uint32_t body_begin) {
+void WasmFunctionEncoder::SerializeFunctionBody(byte* buffer, uint32_t header_begin, uint32_t body_begin) const {
   byte* body = buffer + body_begin;
-  std::memcpy(body, stmts_.data(), stmts_.size());
+  std::memcpy(body, body_.data(), body_.size());
 }
 
 WasmEncoderBuilder::WasmEncoderBuilder(Zone* z) : functions_(z) {}
@@ -138,11 +140,11 @@ void WasmEncoderBuilder::AddFunction(const WasmFunctionEncoder& f) {
   functions_.push_back(f);
 }
 
-WasmEncoder WasmEncoderBuilder::WriteAndBuild(Zone* z) {
-  static const byte kHeaderSize = 6;
+WasmEncoder WasmEncoderBuilder::WriteAndBuild(Zone* z) const {
+  static const uint32_t kHeaderSize = 6;
   uint32_t total_size = kHeaderSize;
   uint32_t body_begin = kHeaderSize;
-  for (int i = 0; i < (uint32_t)functions_.size(); i++) {
+  for (size_t i = 0; i < static_cast<size_t>(functions_.size()); i++) {
     total_size += functions_[i].HeaderSize();
     total_size += functions_[i].BodySize();
     body_begin += functions_[i].HeaderSize();
@@ -150,11 +152,11 @@ WasmEncoder WasmEncoderBuilder::WriteAndBuild(Zone* z) {
   ZoneVector<uint8_t> buffer_vector(total_size, z);
   byte* buffer = buffer_vector.data();
   byte* temp = buffer;
-  AddUint16(temp, 0);                 //globals
-  AddUint16(temp, (uint8_t)functions_.size());
-  AddUint16(temp, 0);                 //data segments
+  AddUint16(&temp, 0);                 //globals
+  AddUint16(&temp, static_cast<uint16_t>(functions_.size()));
+  AddUint16(&temp, 0);                 //data segments
   uint32_t header_begin = kHeaderSize;
-  for (int i = 0; i < (uint32_t)functions_.size(); i++) {
+  for (size_t i = 0; i < static_cast<size_t>(functions_.size()); i++) {
     functions_[i].Serialize(buffer, header_begin, body_begin);
     header_begin += functions_[i].HeaderSize();
     body_begin += functions_[i].BodySize();
