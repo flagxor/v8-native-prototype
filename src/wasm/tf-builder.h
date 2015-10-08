@@ -34,6 +34,8 @@ struct TFBuilder {
   ModuleEnv* module;
   TFNode* mem_buffer;
   TFNode* mem_size;
+  TFNode* mem_buffer_arg;
+  TFNode* mem_size_arg;
   TFNode* function_table;
   TFNode* trap;
   TFNode** control;

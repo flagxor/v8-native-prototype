@@ -555,10 +555,12 @@ void TFBuilder::Return(unsigned count, TFNode** vals) {
   }
 
   compiler::Graph* g = graph->graph();
-  TFNode** buf = Realloc(vals, count + 2);
+  TFNode** buf = Realloc(vals, count + 4);
   buf[count] = *effect;
-  buf[count + 1] = *control;
-  TFNode* ret = g->NewNode(graph->common()->Return(), count + 2, vals);
+  buf[count + 1] = mem_buffer_arg;
+  buf[count + 2] = mem_size_arg;
+  buf[count + 3] = *control;
+  TFNode* ret = g->NewNode(graph->common()->Return(), count + 4, vals);
 
   MergeControlToEnd(graph, ret);
 }
@@ -571,22 +573,32 @@ void TFBuilder::ReturnVoid() {
 
 TFNode* TFBuilder::MakeWasmCall(FunctionSig* sig, TFNode** args) {
   const size_t params = sig->parameter_count();
-  const size_t extra = 2;  // effect and control inputs.
+  const size_t extra = 4;  // heap, effect, and control inputs.
   const size_t count = 1 + params + extra;
 
   // Reallocate the buffer to make space for extra inputs.
   args = Realloc(args, count);
 
+  // Add in heap.
+  args[params + 1] = mem_buffer_arg;
+  args[params + 2] = mem_size_arg;
+
   // Add effect and control inputs.
-  args[params + 1] = *effect;
-  args[params + 2] = *control;
+  args[params + 3] = *effect;
+  args[params + 4] = *control;
 
   const compiler::Operator* op =
       graph->common()->Call(module->GetWasmCallDescriptor(graph->zone(), sig));
   TFNode* call = graph->graph()->NewNode(op, static_cast<int>(count), args);
+  TFNode* result = graph->graph()->NewNode(
+      graph->common()->Projection(0), call);
+  mem_buffer_arg = graph->graph()->NewNode(
+      graph->common()->Projection(1), call);
+  mem_size_arg = graph->graph()->NewNode(
+      graph->common()->Projection(2), call);
 
-  *effect = call;
-  return call;
+  *effect = result;
+  return result;
 }
 
 
@@ -770,7 +782,7 @@ void TFBuilder::BuildWasmToJSWrapper(Handle<JSFunction> function,
   *control = start;
   // JS context is the last parameter.
   TFNode* context = Constant(Handle<Context>(function->context(), isolate));
-  TFNode** args = Buffer(wasm_count + 6);
+  TFNode** args = Buffer(wasm_count + 8);
 
   int pos = 0;
   if (js_count == wasm_count) {
@@ -800,6 +812,8 @@ void TFBuilder::BuildWasmToJSWrapper(Handle<JSFunction> function,
   }
 
   args[pos++] = context;
+  args[pos++] = MemBuffer();
+  args[pos++] = MemSize();
   args[pos++] = *effect;
   args[pos++] = *control;
 
